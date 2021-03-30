@@ -1,0 +1,769 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:
+//
+// Create Date: 05/05/2018 03:12:36 PM
+// Design Name:
+// Module Name: GAME
+// Project Name:
+// Target Devices:
+// Tool Versions:
+// Description:
+//
+// Dependencies:
+//
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+//
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module Game(
+
+        input logic clk, //100Mhz on Basys3
+        input logic rst_7_seg, new_game, i_dlp, i_ilp, i_drp, i_irp, i_chgp, i_selr1, i_selr2, i_selr3, i_selr4,
+
+        //7-segment signals
+        output logic a, b, c, d, e, f, g, dp,
+        output logic [3:0] an,
+        // FPGA pins for 8x8 display
+        output reset_out, //shift register's reset
+        output OE,     //output enable, active low
+        output SH_CP,  //pulse to the shift register
+        output ST_CP,  //pulse to store shift register
+        output DS,     //shift register's serial input data
+        output [7:0] col_select, // active column, active high
+        output [3:0] phases,
+        output logic [4:0] led
+    );
+
+
+
+// ------------------------------------------- updates 7_seg -----------------------------------//
+        //4 numbers to keep value of any of 4 digits
+        //user's hex inputs for 4 digits
+        logic [3:0] in0 = 4'h0; //initial value
+        logic [3:0] in1 = 4'h0; //initial value
+        logic [3:0] in2 = 4'h0; //initial value
+        logic [3:0] in3 = 4'h0; //initial value
+
+        // switches to be synchronize
+        logic sync_i_irp;
+        logic sync_i_ilp;
+        logic sync_i_drp;
+        logic sync_i_dlp;
+        logic sync_rst_7_seg;
+        logic sync_new_game;
+        button_synchronizer_FSM bs_i_irp(clk, ~i_irp, sync_i_irp);
+        button_synchronizer_FSM bs_i_ilp(clk, ~i_ilp, sync_i_ilp);
+        button_synchronizer_FSM bs_i_drp(clk, ~i_drp, sync_i_drp);
+        button_synchronizer_FSM bs_i_dlp(clk, ~i_dlp, sync_i_dlp);
+        button_synchronizer_FSM bs_rst_7_seg(clk, ~rst_7_seg, sync_rst_7_seg);
+        button_synchronizer_FSM bs_new_game(clk, ~new_game, sync_new_game);
+
+        // this module shows 4 decimal numbers on 4-digit 7-Segment.
+        // 4 digits are scanned with high speed, then you do not notice that every time
+        // only one of them is ON. dp is always off.
+        SevSeg_4digit SevSeg_4digit_inst0(
+                        .clk(clk),
+                        .in3(in3), .in2(in2), .in1(in1), .in0(in0), //user inputs for each digit (hexadecimal)
+                        .a(a), .b(b), .c(c), .d(d), .e(e), .f(f), .g(g), .dp(dp), // just connect them to FPGA pins (individual LEDs).
+                        .an(an)   // just connect them to FPGA pins (enable vector for 4 digits active low)
+                    );
+
+        logic stop = 1;
+        stepmotor stepmotor_inst0(
+        	.clk(clk),
+            .direction(1'b1), //user input for motor direction
+        	.speed(2'd3), // user input for motor speed
+            .phases(phases), // just connect them to FPGA (motor driver)
+        	.stop(stop) // user input for stopping the motor
+        );
+
+
+
+// ------------------------------------------- updates led matrix -----------------------------------//
+
+        // count number of sticks in each row
+        logic [2:0] row1_sticks = 3'd1;
+        logic [2:0] row2_sticks = 3'd3;
+        logic [2:0] row3_sticks = 3'd5;
+        logic [2:0] row4_sticks = 3'd7;
+        logic total_number_of_sticks = 16;
+
+
+        // to maintain player position
+        logic current_player = 0;
+
+
+
+        //---------------synchronized logics to control rows and player position
+        logic deb_i_selr1;
+        logic [13:0] counter1;
+        always_ff@(posedge clk)
+            begin
+                if (i_selr1) begin
+                    if (counter1 >= 13'd1000) begin
+                        deb_i_selr1 <= 1;
+                    end else begin
+                        counter1 <= counter1 + 1;
+                        deb_i_selr1 <= 0;
+                    end
+                end else begin
+                    deb_i_selr1 <= 0;
+                    counter1 <= 13'd0;
+                end
+            end
+
+        logic deb_i_selr2;
+        logic [13:0] counter2;
+        always_ff@(posedge clk)
+            begin
+                if (i_selr2) begin
+                    if (counter2 >= 13'd1000) begin
+                        deb_i_selr2 <= 1;
+                    end else begin
+                        counter2 <= counter2 + 1;
+                        deb_i_selr2 <= 0;
+                    end
+                end else begin
+                    deb_i_selr2 <= 0;
+                    counter2 <= 13'd0;
+                end
+            end
+
+        logic deb_i_selr3;
+        logic [13:0] counter3;
+        always_ff@(posedge clk)
+            begin
+                if (i_selr3) begin
+                    if (counter3 >= 13'd1000) begin
+                        deb_i_selr3 <= 1;
+                    end else begin
+                        counter3 <= counter3 + 1;
+                        deb_i_selr3 <= 0;
+                    end
+                end else begin
+                    deb_i_selr3 <= 0;
+                    counter3 <= 13'd0;
+                end
+            end
+
+        logic deb_i_selr4;
+        logic [13:0] counter4;
+        always_ff@(posedge clk)
+            begin
+                if (i_selr4) begin
+                    if (counter4 >= 13'd1000) begin
+                        deb_i_selr4 <= 1;
+                    end else begin
+                        counter4 <= counter4 + 1;
+                        deb_i_selr4 <= 0;
+                    end
+                end else begin
+                    deb_i_selr4 <= 0;
+                    counter4 <= 13'd0;
+                end
+            end
+
+        logic deb_i_chgp;
+        logic [13:0] counter5;
+        always_ff@(posedge clk)
+            begin
+                if (i_chgp) begin
+                    if (counter5 >= 13'd1000) begin
+                        deb_i_chgp <= 1;
+                    end else begin
+                        counter5 <= counter5 + 1;
+                        deb_i_chgp <= 0;
+                    end
+                end else begin
+                    deb_i_chgp <= 0;
+                    counter5 <= 13'd0;
+                end
+            end
+
+        logic sync_i_chgp;
+        logic sync_i_selr1;
+        logic sync_i_selr2;
+        logic sync_i_selr3;
+        logic sync_i_selr4;
+        button_synchronizer_FSM bs_i_chgp(clk, deb_i_chgp, sync_i_chgp);
+        button_synchronizer_FSM bs_i_selr1(clk, deb_i_selr1, sync_i_selr1);
+        button_synchronizer_FSM bs_i_selr2(clk, deb_i_selr2, sync_i_selr2);
+        button_synchronizer_FSM bs_i_selr3(clk, deb_i_selr3, sync_i_selr3);
+        button_synchronizer_FSM bs_i_selr4(clk, deb_i_selr4, sync_i_selr4);
+
+
+
+        logic [3:0] col_num;
+        // initial value for RGB images:
+        //    image_???[0]     : left column  .... image_???[7]     : right column
+        //    image_???[?]'MSB : top line     .... image_???[?]'LSB : bottom line
+        logic [0:7] [7:0] image_red =
+        {8'b00000011, 8'b00000011, 8'b00110011, 8'b00110011, 8'b00110011, 8'b00000011, 8'b00000011, 8'b00000000};
+        logic [0:7] [7:0]  image_green =
+        {8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000};
+        logic [0:7] [7:0]  image_blue =
+        {8'b00000000, 8'b00001100, 8'b00001100, 8'b11001100, 8'b00001100, 8'b00001100, 8'b00000000, 8'b00000000};
+
+        display_8x8 display_8x8_0(
+            .clk(clk),
+
+            // RGB data for display current column
+            .red_vect_in(image_red[col_num]),
+            .green_vect_in(image_green[col_num]),
+            .blue_vect_in(image_blue[col_num]),
+
+            .col_data_capture(), // unused
+            .col_num(col_num),
+
+            // FPGA pins for display
+            .reset_out(reset_out),
+            .OE(OE),
+            .SH_CP(SH_CP),
+            .ST_CP(ST_CP),
+            .DS(DS),
+            .col_select(col_select)
+        );
+
+
+
+        typedef enum logic [4:0] {  beginningState, left, right, update_led_matrix, dec_row1, dec_row2, dec_row3, dec_row4, gameover, show_winner, update_motor} statetype;
+        statetype state = beginningState, nextstate = beginningState;
+        logic [1:0] select;
+        logic [30:0] motor_counter = 30'd0;
+        assign led = state;
+
+        always_ff@(posedge clk)
+            begin
+                if(sync_new_game)
+                    state <= beginningState;
+                else
+                    state <= nextstate;
+            end
+
+        always_ff@(negedge clk) begin
+            case (state)
+                beginningState:     begin
+                                        // current_player <= 0;
+                                        nextstate <= left;
+
+                                        // end
+                                        image_red <=
+                                        {8'b00000011, 8'b00000011, 8'b00110011, 8'b00110011, 8'b00110011, 8'b00000011, 8'b00000011, 8'b00000000};
+                                        image_green <=
+                                        {8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000, 8'b00000000};
+                                        image_blue <=
+                                        {8'b00000000, 8'b00001100, 8'b00001100, 8'b11001100, 8'b00001100, 8'b00001100, 8'b00000000, 8'b00000000};
+                                        row1_sticks <= 3'd1;
+                                        row2_sticks <= 3'd3;
+                                        row3_sticks <= 3'd5;
+                                        row4_sticks <= 3'd7;
+                                    end
+        //                            else if (sync_i_irp) nextstate <= score_add_right;
+        //                            else if (sync_i_ilp) nextstate <= score_add_left;
+        //                            else if (sync_i_drp) nextstate <= score_sub_right;
+        //                            else if (sync_i_dlp) nextstate <= score_sub_left;
+
+
+                left:               begin
+
+                                        if (current_player) begin
+                                            nextstate <= update_motor;
+                                            current_player <= 0;
+                                        end
+                                        else if (row1_sticks == 0 && row2_sticks == 0 && row3_sticks == 0 && row4_sticks == 0)
+                                            nextstate <= gameover;
+
+                                        else if (sync_i_selr1 && row1_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd0;
+                                        end
+
+                                        else if (sync_i_selr2 && row2_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd1;
+                                        end
+
+                                        else if (sync_i_selr3 && row3_sticks > 0) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd2;
+                                        end
+
+                                        else if (sync_i_selr4 && row4_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd3;
+                                        end
+
+                                        else
+                                            nextstate <= left;
+                                    end // left
+                right:              begin
+                                        if (~current_player) begin
+                                            nextstate <= update_motor;
+                                            current_player <= 1;
+                                        end
+                                        else if (row1_sticks == 0 && row2_sticks == 0 && row3_sticks == 0 && row4_sticks == 0)
+                                            nextstate <= gameover;
+
+                                        else if (sync_i_selr1 && row1_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd0;
+                                        end
+
+                                        else if (sync_i_selr2 && row2_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd1;
+                                        end
+
+                                        else if (sync_i_selr3 && row3_sticks > 0) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd2;
+                                        end
+
+                                        else if (sync_i_selr4 && row4_sticks > 0 ) begin
+                                            nextstate <= update_led_matrix;
+                                            select <= 2'd3;
+                                        end
+
+                                        else
+                                            nextstate <= right;
+                                    end // right
+
+                update_led_matrix:  begin
+                                        case(select)
+                                            2'd0: begin
+                                                image_blue [3] [7] <= 0;
+                                                image_blue [3] [6] <= 0;
+                                                 row1_sticks <= row1_sticks - 1;
+                                                 nextstate <= dec_row1;
+                                            end
+                                            2'd1: begin
+                                                image_red[1 + row2_sticks][5] <= 0;
+                                                image_red[1 + row2_sticks][4] <= 0;
+                                                row2_sticks <= row2_sticks - 1;
+                                                nextstate <= dec_row2;
+                                            end
+                                            2'd2: begin
+                                                image_blue[row3_sticks][2] <= 0;
+                                                image_blue[row3_sticks][3] <= 0;
+                                                row3_sticks <= row3_sticks - 1;
+                                                nextstate <= dec_row3;
+                                            end
+                                            2'd3: begin
+                                                image_red[row4_sticks - 1][1] <= 0;
+                                                image_red[row4_sticks - 1][0] <= 0;
+                                                row4_sticks <= row4_sticks - 1;
+                                                nextstate <= dec_row4;
+                                            end
+                                        endcase
+                                    end // update_led_matrix
+
+                dec_row1:           begin
+                                        if (row1_sticks == 0 || sync_i_chgp) begin
+                                            if (current_player) begin
+                                                nextstate <= left;
+                                                // current_player <= ~current_player;
+                                            end
+                                            else begin
+                                                nextstate <= right;
+                                                // current_player <= ~current_player;
+                                            end
+                                        end
+                                        else if (sync_i_selr1)
+                                            nextstate <= update_led_matrix;
+                                    end
+
+                dec_row2:           begin
+                                        if (row2_sticks == 0 || sync_i_chgp) begin
+                                            if (current_player) begin
+                                                nextstate <= left;
+                                                // current_player <= ~current_player;
+                                            end
+                                            else begin
+                                                nextstate <= right;
+                                                // current_player <= ~current_player;
+                                            end
+                                        end
+                                        else if (sync_i_selr2)
+                                            nextstate <= update_led_matrix;
+                                    end
+
+                dec_row3:           begin
+                                        if (row3_sticks == 0 || sync_i_chgp) begin
+                                            if (current_player) begin
+                                                nextstate <= left;
+                                                // current_player <= ~current_player;
+                                            end
+                                            else begin
+                                                nextstate <= right;
+                                                // current_player <= ~current_player;
+                                            end
+                                        end
+                                        else if (sync_i_selr3)
+                                            nextstate <= update_led_matrix;
+                                    end
+
+                dec_row4:           begin
+                                        if (row4_sticks == 0 || sync_i_chgp) begin
+                                            if (current_player) begin
+                                                nextstate <= left;
+                                                // current_player <= ~current_player;
+                                            end
+                                            else begin
+                                                nextstate <= right;
+                                                // current_player <= ~current_player;
+                                            end
+                                        end
+                                        else if (sync_i_selr4)
+                                            nextstate <= update_led_matrix;
+                                    end
+
+                gameover: begin
+                    if (current_player) begin
+                        if (in0 < 9)
+                            in0 <= in0 + 1;
+                        else
+                        begin
+                            in0 <= 4'h0;
+                            if (in1 < 9)
+                                in1 <= in1 + 1;
+                            else
+                                in1 <= 4'h0;
+                        end
+                    end
+                    else begin
+                        if (in2 < 9)
+                            in2 <= in2 + 1;
+                        else
+                        begin
+                            in2 <= 4'h0;
+                            if (in3 < 9)
+                                in3 <= in3 + 1;
+                            else
+                                in3 <= 4'h0;
+                        end
+                    end
+                    nextstate <= show_winner;
+                end
+                show_winner: begin
+                    if (current_player) begin
+                        image_red <= {
+                        8'b00011100,
+                        8'b00011100,
+                        8'b00011100,
+                        8'b00011100,
+                        8'b01111111,
+                        8'b00111110,
+                        8'b00011100,
+                        8'b00001000
+                        };
+                    end else begin
+                        image_red <= {
+                        8'b00001000,
+                        8'b00011100,
+                        8'b00111110,
+                        8'b01111111,
+                        8'b00011100,
+                        8'b00011100,
+                        8'b00011100,
+                        8'b00011100
+                        };
+                    end
+                end
+                update_motor: begin
+                    if (motor_counter == 30'd266500000) begin
+                        stop <= 1;
+                        motor_counter <= 30'd0;
+                        if (current_player) begin
+                            nextstate <= right;
+                        end else begin
+                            nextstate <= left;
+                        end
+                    end else begin
+                        stop <= 0;
+                        motor_counter <= motor_counter + 1;
+                    end
+                end
+
+                endcase
+                //
+                if (sync_i_irp)    begin
+                                        if (in0 < 9)
+                                            in0 <= in0 + 1;
+                                        else
+                                        begin
+                                            in0 <= 4'h0;
+                                            if (in1 < 9)
+                                                in1 <= in1 + 1;
+                                            else
+                                                in1 <= 4'h0;
+                                        end
+                                    end // score_add_right
+                //
+                if (sync_i_ilp)     begin
+                                        if (in2 < 9)
+                                            in2 <= in2 + 1;
+                                        else
+                                        begin
+                                            in2 <= 4'h0;
+                                            if (in3 < 9)
+                                                in3 <= in3 + 1;
+                                            else
+                                                in3 <= 4'h0;
+                                        end
+                                    end // score_add_left
+                //
+                //
+                if (sync_i_drp)    begin
+                                        if (in0 > 0)
+                                            in0 <= in0 - 1;
+                                        else
+                                        begin
+                                            in0 <= 4'h9;
+                                            if (in1 > 0)
+                                                in1 <= in1 - 1;
+                                            else
+                                                in1 <= 4'h9;
+                                        end
+                                    end // score_sub_right
+                //
+                if (sync_i_dlp)     begin
+                                        if (in2 > 0)
+                                            in2 <= in2 - 1;
+                                        else
+                                        begin
+                                            in2 <= 4'h9;
+                                            if (in3 > 0)
+                                                in3 <= in3 - 1;
+                                            else
+                                                in3 <= 4'h9;
+                                        end
+                                    end // score_sub_left
+                //
+                if (sync_rst_7_seg)     begin
+                                            in0 <= 4'h0; //initial value
+                                            in1 <= 4'h0; //initial value
+                                            in2 <= 4'h0; //initial value
+                                            in3 <= 4'h0; //initial value
+                                        end // reset_7_seg
+
+        end
+endmodule
+
+
+
+
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 05/08/2018 06:34:05 PM
+// Design Name: 
+// Module Name: button_synchronizer_FSM
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module button_synchronizer_FSM(input logic clk, i_button, 
+                               output logic o_button);
+                               
+        typedef enum logic [1:0] {S0,S1,S2} stateType;
+        stateType state, nextState;
+        
+        always_ff@(posedge clk)
+            begin
+                state <= nextState;
+            end
+            
+        always_comb
+            begin
+                 case (state)
+                        S0:        
+                                    if(~i_button)
+                                        begin
+                                            o_button = 0;
+                                            nextState = S0;
+                                        end
+                                   else 
+                                        begin
+                                            nextState = S1;
+                                            o_button = 1;
+                                        end    
+                        S1:        if(~i_button) 
+                                        begin
+                                              nextState = S0;
+                                              o_button = 0;
+                                        end
+                                  else 
+                                        begin
+                                              nextState = S2;
+                                              o_button = 0;
+                                        end
+                        S2:        if(i_button)
+                                        begin
+                                              nextState = S2;
+                                              o_button = 0;
+                                        end
+                                   else 
+                                        begin
+                                              nextState = S0;
+                                              o_button = 0;
+                                        end
+                  endcase 
+            end  
+
+endmodule
+
+
+
+
+#------------------------------------------------------------
+#---------------------- Clock signal ------------------------
+#------------------------------------------------------------
+set_property PACKAGE_PIN W5 [get_ports clk]  	 	 	 	  
+set_property IOSTANDARD LVCMOS33 [get_ports clk] 
+create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports clk] 
+
+# Switches 
+set_property PACKAGE_PIN V17 [get_ports {new_game}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {new_game}]
+set_property PACKAGE_PIN V16 [get_ports {i_irp}] 	 	 	 	 	 
+    set_property IOSTANDARD LVCMOS33 [get_ports {i_irp}]
+set_property PACKAGE_PIN W16 [get_ports {i_ilp}] 	 	 	 	 	 
+    set_property IOSTANDARD LVCMOS33 [get_ports {i_ilp}]
+set_property PACKAGE_PIN W17 [get_ports {i_drp}]                          
+    set_property IOSTANDARD LVCMOS33 [get_ports {i_drp}] 
+set_property PACKAGE_PIN W15 [get_ports {i_dlp}] 	 	 	 	 	 
+    set_property IOSTANDARD LVCMOS33 [get_ports {i_dlp}]
+set_property PACKAGE_PIN V15 [get_ports {rst_7_seg}]                          
+    set_property IOSTANDARD LVCMOS33 [get_ports {rst_7_seg}]
+set_property PACKAGE_PIN R3 [get_ports {i_chgp}] 	 	 	 	 	 
+#    set_property IOSTANDARD LVCMOS33 [get_ports {i_chgp}] 
+#set_property PACKAGE_PIN W2 [get_ports {i_selr1}]                          
+#    set_property IOSTANDARD LVCMOS33 [get_ports {i_selr1}] 
+#set_property PACKAGE_PIN U1 [get_ports {i_selr2}]                          
+#    set_property IOSTANDARD LVCMOS33 [get_ports {i_selr2}] 
+#set_property PACKAGE_PIN T1 [get_ports {i_selr3}]                          
+#    set_property IOSTANDARD LVCMOS33 [get_ports {i_selr3}] 
+#set_property PACKAGE_PIN R2 [get_ports {i_selr4}]                          
+#    set_property IOSTANDARD LVCMOS33 [get_ports {i_selr4}] 
+
+#------------------------------------------------------------
+#-------------------- 7 segment display ---------------------
+#------------------------------------------------------------
+set_property PACKAGE_PIN W7 [get_ports {a}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {a}] 
+set_property PACKAGE_PIN W6 [get_ports {b}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {b}] 
+set_property PACKAGE_PIN U8 [get_ports {c}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {c}] 
+set_property PACKAGE_PIN V8 [get_ports {d}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {d}] 
+set_property PACKAGE_PIN U5 [get_ports {e}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {e}] 
+set_property PACKAGE_PIN V5 [get_ports {f}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {f}] 
+set_property PACKAGE_PIN U7 [get_ports {g}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {g}] 
+set_property PACKAGE_PIN V7 [get_ports dp]  	 	 	 	  
+ 	set_property IOSTANDARD LVCMOS33 [get_ports dp] 
+	
+set_property PACKAGE_PIN U2 [get_ports {an[0]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {an[0]}] 
+set_property PACKAGE_PIN U4 [get_ports {an[1]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {an[1]}] 
+set_property PACKAGE_PIN V4 [get_ports {an[2]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {an[2]}] 
+set_property PACKAGE_PIN W4 [get_ports {an[3]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {an[3]}] 
+
+	 	 
+#Buttons 
+set_property PACKAGE_PIN U18 [get_ports i_chgp]                           
+    set_property IOSTANDARD LVCMOS33 [get_ports i_chgp] 
+set_property PACKAGE_PIN T18 [get_ports i_selr1]                           
+    set_property IOSTANDARD LVCMOS33 [get_ports i_selr1] 
+set_property PACKAGE_PIN W19 [get_ports i_selr4]                           
+    set_property IOSTANDARD LVCMOS33 [get_ports i_selr4] 
+set_property PACKAGE_PIN T17 [get_ports i_selr2]                           
+    set_property IOSTANDARD LVCMOS33 [get_ports i_selr2] 
+set_property PACKAGE_PIN U17 [get_ports i_selr3]                           
+    set_property IOSTANDARD LVCMOS33 [get_ports i_selr3] 
+     
+
+#------------------------------------------------------------
+#---------------------- Display Connector--------------------
+#------------------------------------------------------------
+set_property PACKAGE_PIN L17 [get_ports reset_out]
+    set_property IOSTANDARD LVCMOS33 [get_ports reset_out]
+set_property PACKAGE_PIN M18 [get_ports OE]
+    set_property IOSTANDARD LVCMOS33 [get_ports OE]
+set_property PACKAGE_PIN P18 [get_ports SH_CP]
+    set_property IOSTANDARD LVCMOS33 [get_ports SH_CP]
+set_property PACKAGE_PIN N17 [get_ports ST_CP]
+    set_property IOSTANDARD LVCMOS33 [get_ports ST_CP]
+set_property PACKAGE_PIN K17 [get_ports DS]
+    set_property IOSTANDARD LVCMOS33 [get_ports DS]
+set_property PACKAGE_PIN A14 [get_ports {col_select[0]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[0]}]
+set_property PACKAGE_PIN A16 [get_ports {col_select[1]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[1]}]
+set_property PACKAGE_PIN B15 [get_ports {col_select[2]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[2]}]
+set_property PACKAGE_PIN B16 [get_ports {col_select[3]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[3]}]
+set_property PACKAGE_PIN A15 [get_ports {col_select[4]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[4]}]
+set_property PACKAGE_PIN A17 [get_ports {col_select[5]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[5]}]
+set_property PACKAGE_PIN C15 [get_ports {col_select[6]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[6]}]
+set_property PACKAGE_PIN C16 [get_ports {col_select[7]}]
+    set_property IOSTANDARD LVCMOS33 [get_ports {col_select[7]}]
+
+# LEDs
+set_property PACKAGE_PIN U16 [get_ports {led[0]}]
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {led[0]}] 
+set_property PACKAGE_PIN E19 [get_ports {led[1]}]
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {led[1]}]
+set_property PACKAGE_PIN U19 [get_ports {led[2]}]
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {led[2]}]
+set_property PACKAGE_PIN V19 [get_ports {led[3]}]
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {led[3]}]
+set_property PACKAGE_PIN W18 [get_ports {led[4]}]
+ 	set_property IOSTANDARD LVCMOS33 [get_ports {led[4]}]
+
+
+#4 phases
+#step motor: Bb
+set_property PACKAGE_PIN J1 [get_ports {phases[3]}]	 	 	 	 
+ 	set_property IOSTANDARD  LVCMOS33 [get_ports {phases[3]}] 
+#step motor: Ab
+set_property PACKAGE_PIN L2 [get_ports {phases[1]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD  LVCMOS33 [get_ports {phases[1]}] 
+#step motor: B
+set_property PACKAGE_PIN J2 [get_ports {phases[2]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD  LVCMOS33 [get_ports {phases[2]}] 
+#step motor: A
+set_property PACKAGE_PIN G2 [get_ports {phases[0]}] 	 	 	 	 	 
+ 	set_property IOSTANDARD  LVCMOS33 [get_ports {phases[0]}]
+	
+
+
+
+
